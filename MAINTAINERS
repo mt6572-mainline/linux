@@ -16342,6 +16342,11 @@ M:	Roman Vivchar <rva333@protonmail.com>
 S:	Odd Fixes
 F:	drivers/iio/adc/mt6323-auxadc.c
 
+MEDIATEK MT6323 PMIC EFUSE DRIVER
+M:	Roman Vivchar <rva333@protonmail.com>
+S:	Odd Fixes
+F:	drivers/nvmem/mt6323-efuse.c
+
 MEDIATEK PMIC LED DRIVER
 M:	Sen Chu <sen.chu@mediatek.com>
 M:	Sean Wang <sean.wang@mediatek.com>

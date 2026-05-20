@@ -9,9 +9,11 @@
 #include <linux/devfreq.h>
 #include <linux/devfreq_cooling.h>
 #include <linux/device.h>
+#include <linux/nvmem-consumer.h>
 #include <linux/platform_device.h>
 #include <linux/pm_opp.h>
 #include <linux/property.h>
+#include <linux/slab.h>
 
 #include "lima_device.h"
 #include "lima_devfreq.h"
@@ -102,6 +104,40 @@ void lima_devfreq_fini(struct lima_device *ldev)
 	}
 }
 
+static int lima_devfreq_set_opp_config(struct device *dev)
+{
+	struct dev_pm_opp_config config = {};
+	struct nvmem_cell *cell;
+	u8 *speedbin;
+	size_t len;
+	u32 opp_hw_ver;
+	int ret;
+
+	cell = nvmem_cell_get(dev, "speedbin");
+	if (IS_ERR(cell))
+		/* Optional, continue without speedbin restriction */
+		return 0;
+
+	speedbin = nvmem_cell_read(cell, &len);
+	nvmem_cell_put(cell);
+
+	if (IS_ERR(speedbin))
+		/* Optional, continue without speedbin restriction */
+		return 0;
+
+	opp_hw_ver = BIT(*speedbin);
+	kfree(speedbin);
+
+	config.supported_hw = &opp_hw_ver;
+	config.supported_hw_count = 1;
+
+	ret = devm_pm_opp_set_config(dev, &config);
+	if (ret)
+		dev_err(dev, "Failed to set OPP config\n");
+
+	return ret;
+}
+
 int lima_devfreq_init(struct lima_device *ldev)
 {
 	struct thermal_cooling_device *cooling;
@@ -133,6 +169,10 @@ int lima_devfreq_init(struct lima_device *ldev)
 		if (ret != -ENODEV)
 			return ret;
 	}
+
+	ret = lima_devfreq_set_opp_config(dev);
+	if (ret)
+		return ret;
 
 	ret = devm_pm_opp_of_add_table(dev);
 	if (ret)

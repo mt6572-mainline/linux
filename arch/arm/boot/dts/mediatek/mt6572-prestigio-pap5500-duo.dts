@@ -78,7 +78,7 @@
 	status = "okay";
 
 	panel@0 {
-		compatible = "orisetech,otm8018b";
+		compatible = "boyi,otm8018b";
 		reg = <0>;
 		vcc-supply = <&mt6323_vgp1_reg>;
 

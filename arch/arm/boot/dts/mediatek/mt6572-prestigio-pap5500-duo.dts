@@ -104,6 +104,18 @@
 	proc-supply = <&mt6323_vproc_reg>;
 };
 
+&gpu {
+	/* Switch to WHPLL */
+	assigned-clocks = <&topckgen CLK_TOP_MFG_MUX_SEL>,
+			  <&topckgen CLK_TOP_MFG_SEL>;
+	assigned-clock-parents = <&topckgen CLK_TOP_MFG_PRE_500M>,
+				 <&topckgen CLK_TOP_MFG_MUX_SEL>;
+
+	operating-points-v2 = <&gpu_opp_table>;
+	nvmem-cells = <&gpu_speedbin>;
+	nvmem-cell-names = "speedbin";
+};
+
 &i2c1 {
 	pinctrl-0 = <&i2c1_pins>;
 	pinctrl-names = "default";

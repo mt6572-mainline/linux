@@ -10,6 +10,7 @@
 | power key: mediatek,mt6323-keys      | 🟢 OK                                           | 🟢 OK                       | 🔴 TBD                        | 🟢 OK                                           |
 | haptics: regulator-haptic            | 🟢 OK                                           | 🔴 TBD                      | 🔴 TBD                        | 🟢 OK                                           |
 | charger                              | 🔴 DEAD                                         | 🔴 DEAD                     | 🔴 DEAD                       | 🔴 DEAD                                         |
+| audio (playback + headphone jack)    | 🔴 TBD                                          | 🟡 partial: playback + jack + speaker, no capture | 🔴 TBD                        | 🟡 partial: playback + jack + speaker, no capture |
 
 ### Per-device components
 |                 | JTY D101                           | Lenovo A369i              | Energy Phone Colors           | Prestigio PAP5500 DUO              |
@@ -48,7 +49,7 @@ all of these need upstreaming
 | fhctl     | subset of apmixed iirc     | 🔴 DEAD    | not sure if we really need it        |
 | mmsys     | mediatek,mt6572-mmsys      | 🟡 partial | some dbi clocks from cg1 are missing |
 | mfgcfg    | mediatek,mt6572-mfgcfg     | 🟢 OK      |                                      |
-| audio     |                            | 🔴 DEAD    | not needed for now, can't test       |
+| audio     | mediatek,mt6572-audsys     | 🟡 partial | used as a syscon; the AFE driver maps the regs directly, no dedicated clock driver yet |
 
 ### Pinctrl
 missing emmc r1r0 pins, needs upstreaming
@@ -146,7 +147,13 @@ mostly useless i'd say, they're not full hw engines but rather only parts of the
 not existent in the upstream
 
 ### Audio
-needs afe/i2s/etc drivers
+| component          | driver / binding             | status  | note                                  |
+|--------------------|------------------------------|---------|---------------------------------------|
+| AFE (DL1 playback) | mediatek,mt6572-audio        | 🟢 OK   | DL1 playback front-end; no UL/capture |
+| sound card         | mediatek,mt6572-mt6323-sound | 🟢 OK   | machine: routing, jack, speaker amp   |
+| analog codec       | mediatek,mt6323-sound        | 🟢 OK   | MT6323 PMIC: DAC, headphone, volume   |
+| capture (mic)      |                              | 🔴 DEAD |                                       |
+| i2s                |                              | 🔴 DEAD |                                       |
 
 ### Pericfg
 it seems to be clock + reset controller for NAND and USB

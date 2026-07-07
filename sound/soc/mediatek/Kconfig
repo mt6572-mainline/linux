@@ -36,6 +36,26 @@ config SND_SOC_MT2701_WM8960
 	  Select Y if you have such device.
 	  If unsure select "N".
 
+config SND_SOC_MT6572
+	tristate "ASoC support for the MediaTek MT6572 chip"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	select SND_SOC_MEDIATEK
+	help
+	  This adds the ASoC platform (AFE) driver for the MediaTek MT6572
+	  SoC. Select a machine driver below to build a sound card.
+	  Select Y if you have such a device. If unsure select "N".
+
+config SND_SOC_MT6572_MT6323
+	tristate "ASoC machine driver for MT6572 with the MT6323 codec"
+	depends on SND_SOC_MT6572
+	select SND_SOC_MT6323
+	imply SND_SOC_SIMPLE_AMPLIFIER
+	help
+	  This adds the ASoC machine driver for a MediaTek MT6572 board with
+	  the on-PMIC MT6323 analog audio codec: DL1 playback, headphone-jack
+	  detection and an optional external speaker amplifier.
+	  Select Y if you have such a device. If unsure select "N".
+
 config SND_SOC_MT6797
 	tristate "ASoC support for Mediatek MT6797 chip"
 	depends on ARCH_MEDIATEK

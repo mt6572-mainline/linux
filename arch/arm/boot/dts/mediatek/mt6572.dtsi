@@ -530,6 +530,26 @@
 			status = "disabled";
 		};
 
+		audsys: clock-controller@11140000 {
+			/* audio clock gates + AFE syscon; simple-mfd adds the AFE child */
+			compatible = "mediatek,mt6572-audsys", "syscon",
+				     "simple-mfd";
+			reg = <0x11140000 0x1000>;
+			#clock-cells = <1>;
+
+			afe: audio-controller {
+				compatible = "mediatek,mt6572-audio";
+				clocks = <&topckgen CLK_TOP_AUDIO>;
+				iram = <&audio_sram>;
+				interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_LOW>;
+			};
+		};
+
+		audio_sram: sram@11141000 {
+			compatible = "mmio-sram";
+			reg = <0x11141000 0x4000>;
+		};
+
 		mfgcfg: syscon@13000000 {
 			compatible = "mediatek,mt6572-mfgcfg", "syscon";
 			reg = <0x13000000 0x1000>;

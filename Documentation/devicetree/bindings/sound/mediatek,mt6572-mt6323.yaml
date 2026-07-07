@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/sound/mediatek,mt6572-mt6323.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek MT6572 sound card with the MT6323 PMIC codec
+
+maintainers:
+  - Custom Firmware <gabin278@gmail.com>
+
+description:
+  MediaTek MT6572 SoC-based sound card using the MT6323 PMIC analog codec
+  for playback, with an optional external speaker amplifier.
+
+allOf:
+  - $ref: sound-card-common.yaml#
+
+properties:
+  compatible:
+    const: mediatek,mt6572-mt6323-sound
+
+  mediatek,platform:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: phandle to the MT6572 AFE platform.
+
+  aux-devs:
+    $ref: /schemas/types.yaml#/definitions/phandle-array
+    description:
+      List of phandles pointing to auxiliary devices, such as an external
+      speaker amplifier, to be added to the sound card.
+
+  hp-det-gpios:
+    maxItems: 1
+    description: Optional headphone-jack plug-detect GPIO.
+
+required:
+  - compatible
+  - mediatek,platform
+
+unevaluatedProperties: false

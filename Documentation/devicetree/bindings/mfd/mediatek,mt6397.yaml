@@ -110,13 +110,14 @@ properties:
   audio-codec:
     type: object
     description:
-      Audio codec support with MT6358 and MT6397.
+      Audio codec support with MT6323, MT6358 and MT6397.
     additionalProperties: true
 
     properties:
       compatible:
         oneOf:
           - enum:
+              - mediatek,mt6323-sound
               - mediatek,mt6358-sound
               - mediatek,mt6359-codec
               - mediatek,mt6397-codec

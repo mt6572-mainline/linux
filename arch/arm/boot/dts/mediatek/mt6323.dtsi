@@ -21,6 +21,10 @@
 			#io-channel-cells = <1>;
 		};
 
+		mt6323_codec: audio-codec {
+			compatible = "mediatek,mt6323-sound";
+		};
+
 		efuse {
 			compatible = "mediatek,mt6323-efuse";
 

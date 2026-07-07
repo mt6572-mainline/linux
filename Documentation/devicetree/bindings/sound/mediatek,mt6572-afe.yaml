@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/sound/mediatek,mt6572-afe.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek AFE PCM controller for MT6572
+
+maintainers:
+  - Custom Firmware <gabin278@gmail.com>
+
+properties:
+  compatible:
+    const: mediatek,mt6572-audio
+
+  clocks:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+
+  iram:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: on-chip audio SRAM used for the DL1 playback buffers.
+
+required:
+  - compatible
+  - clocks
+  - interrupts
+  - iram
+
+additionalProperties: false

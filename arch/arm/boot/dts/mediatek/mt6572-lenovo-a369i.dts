@@ -60,6 +60,13 @@
 		min-microvolt = <1200000>;
 		max-microvolt = <3300000>;
 	};
+
+	sound {
+		compatible = "mediatek,mt6572-mt6323-sound";
+		mediatek,platform = <&afe>;
+		audio-routing = "Speaker", "Speaker Driver";
+		hp-det-gpios = <&pio 136 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &bls {

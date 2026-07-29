@@ -38,6 +38,19 @@ config APM_POWER
 config ADC_BATTERY_HELPER
 	tristate
 
+config BATTERY_MT6323
+	tristate "MediaTek MT6323 PMIC software fuel gauge"
+	depends on MFD_MT6397 && IIO
+	help
+	  Software fuel gauge for the MediaTek MT6323 PMIC, which has no
+	  autonomous fuel-gauge hardware. It estimates state-of-charge from
+	  the PMIC AUXADC battery-voltage and current-sense channels using
+	  open-circuit-voltage compensation against the simple-battery OCV
+	  table, mirroring how the stock firmware gauges these batteries.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called mt6323_battery.
+
 config GENERIC_ADC_BATTERY
 	tristate "Generic battery support using IIO"
 	depends on IIO

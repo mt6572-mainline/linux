@@ -6,6 +6,7 @@
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/iio/adc/mediatek,mt6323-auxadc.h>
 #include "mt6572.dtsi"
 #include "mt6323.dtsi"
 
@@ -56,6 +57,35 @@
 		num-interpolated-steps = <1023>;
 		default-brightness-level = <512>;
 	};
+
+        battery: battery {
+                compatible = "simple-battery";
+                charge-full-design-microamp-hours = <1500000>;
+                voltage-max-design-microvolt = <4200000>;
+                voltage-min-design-microvolt = <3400000>;
+                constant-charge-voltage-max-microvolt = <4200000>;
+                factory-internal-resistance-micro-ohms = <215000>;
+                ocv-capacity-celsius = <25>;
+                ocv-capacity-table-0 = <4158000 100>, <4104000  95>,
+                                       <4063000  90>, <4024000  85>,
+                                       <3984000  80>, <3948000  75>,
+                                       <3922000  70>, <3897000  65>,
+                                       <3856000  60>, <3819000  55>,
+                                       <3802000  50>, <3789000  45>,
+                                       <3778000  40>, <3768000  35>,
+                                       <3762000  30>, <3752000  25>,
+                                       <3732000  20>, <3701000  15>,
+                                       <3674000  10>, <3660000   5>,
+                                       <3407000   0>;
+        };
+
+        fuel-gauge {
+                compatible = "mediatek,mt6323-battery";
+		io-channels = <&mt6323_adc MT6323_AUXADC_BATSNS>,
+			      <&mt6323_adc MT6323_AUXADC_ISENSE>;
+		io-channel-names = "batsns", "isense";
+		monitored-battery = <&battery>;
+        };
 
 	sound {
 		compatible = "mediatek,mt6572-mt6323-sound";

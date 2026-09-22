@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/iio/adc/mediatek,mt6323-auxadc.h>
 #include <dt-bindings/input/input.h>
 #include "mt6572.dtsi"
 #include "mt6323.dtsi"
@@ -179,6 +180,10 @@
 	interrupts-extended = <&pio 2 IRQ_TYPE_EDGE_BOTH>,
 			      <&pmic 18 IRQ_TYPE_LEVEL_HIGH>;
 	interrupt-names = "eint", "pmic";
+
+	io-channels = <&mt6323_adc MT6323_AUXADC_ACCDET>;
+	io-channel-names = "accdet";
+
 	status = "okay";
 };
 

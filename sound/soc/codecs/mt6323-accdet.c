@@ -21,6 +21,7 @@
 #include <linux/irqdomain.h>
 #include <linux/irq.h>
 #include <linux/regmap.h>
+#include <linux/iio/consumer.h>
 #include <sound/soc.h>
 #include <sound/jack.h>
 
@@ -46,26 +47,51 @@
 
 #define ACCDET_CON3_PWM_WIDTH		REGISTER_VAL(0x500)
 
-#define ACCDET_CON4_PWM_THRESHOLD	REGISTER_VAL(0x400)
+/* Threshold at the width: the mic bias is held steady rather than pulsed */
+#define ACCDET_CON4_PWM_THRESHOLD	ACCDET_CON3_PWM_WIDTH
 
-#define ACCDET_CON5_FALL_DELAY		GENMASK(16, 15)
-#define ACCDET_CON5_FALL_DELAY_DEFAULT	1
+#define ACCDET_CON5_FALL_DELAY		BIT(15)
 #define ACCDET_CON5_RISE_DELAY		GENMASK(14, 0)
 #define ACCDET_CON5_RISE_DELAY_DEFAULT	0x03f0
 
 /* DEBOUNCE0 (state 00): long while detecting a plug, short for button taps */
 #define ACCDET_CON6_DEBOUNCE_DETECT	0x3000
 #define ACCDET_CON6_DEBOUNCE_BUTTON	0x0400
-#define ACCDET_CON7_DEBOUNCE_DEFAULT	0x3000
-#define ACCDET_CON9_DEBOUNCE_DEFAULT	0x0020
+/* DEBOUNCE1 (state 01): gates press detection */
+#define ACCDET_CON7_DEBOUNCE_DEFAULT	0x0800
+/* DEBOUNCE3 (state 11): long enough to ride out contacts breaking mid-insertion */
+#define ACCDET_CON9_DEBOUNCE_DEFAULT	0x0a00
 
 /* Power down timeout for spurious wakeups */
 #define ACCDET_SHUTDOWN_MS		1000
+
+/*
+ * Headphones without a mic have no buttons to watch and short the mic bias to
+ * ground. Power down once the plug has settled (a slow insertion may still
+ * turn out to be a headset); the EINT catches the unplug.
+ */
+#define ACCDET_HEADPHONE_SHUTDOWN_MS	5000
+
+/* A plug being pushed in or wiggled breaks contact; confirm removals after this */
+#define ACCDET_UNPLUG_CONFIRM_US	50000
+
+/* Button releases are polled rather than waited on as an interrupt */
+#define ACCDET_KEY_POLL_MS		60
+
+/* Settling time before the key voltage is sampled */
+#define ACCDET_KEY_SETTLE_US		400
+
+/* The block latches the clear on its own slow clock, so hold the bit */
+#define ACCDET_IRQ_CLR_US		100
 
 #define ACCDET_CON11_IRQ_CLR		BIT(8)
 #define ACCDET_CON11_IRQ_STA		BIT(0)
 
 #define ACCDET_CON13_STATE_MASK		GENMASK(7, 6)
+
+#define ACCDET_KEY_MEDIA_MAX_MV		90
+#define ACCDET_KEY_VOLUMEUP_MAX_MV	170
+#define ACCDET_KEY_VOLUMEDOWN_MAX_MV	560
 
 #define MT6323_ACCDET_JACK_MASK (SND_JACK_HEADPHONE | \
 				SND_JACK_HEADSET | \
@@ -92,6 +118,8 @@ struct mt6323_accdet {
 	int btn_type;
 	bool powered;
 	struct delayed_work shutdown_work;
+	struct delayed_work key_work;
+	struct iio_channel *adc;
 };
 
 static int mt6323_accdet_get_jack_type(struct mt6323_accdet *accdet,
@@ -104,6 +132,42 @@ static int mt6323_accdet_get_jack_type(struct mt6323_accdet *accdet,
 		return ret;
 
 	*jack = FIELD_GET(ACCDET_CON13_STATE_MASK, val);
+	return 0;
+}
+
+static int mt6323_accdet_get_btn_type(struct mt6323_accdet *accdet)
+{
+	int ret, mv;
+
+	if (!accdet->adc)
+		return SND_JACK_BTN_0;
+
+	ret = regmap_write(accdet->regmap, MT6323_ACCDET_CON0,
+			   ACCDET_CON0_1V9_MODE_ON);
+	if (!ret) {
+		udelay(ACCDET_KEY_SETTLE_US);
+		ret = iio_read_channel_processed(accdet->adc, &mv);
+	}
+
+	regmap_write(accdet->regmap, MT6323_ACCDET_CON0,
+		     ACCDET_CON0_1V9_MODE_OFF);
+
+	if (ret) {
+		dev_warn(accdet->dev, "failed to read key voltage: %d\n", ret);
+		return SND_JACK_BTN_0;
+	}
+
+	dev_dbg(accdet->dev, "key voltage %d mV\n", mv);
+
+	if (mv < ACCDET_KEY_MEDIA_MAX_MV)
+		return SND_JACK_BTN_0;
+
+	if (mv < ACCDET_KEY_VOLUMEUP_MAX_MV)
+		return SND_JACK_BTN_2;
+
+	if (mv < ACCDET_KEY_VOLUMEDOWN_MAX_MV)
+		return SND_JACK_BTN_1;
+
 	return 0;
 }
 
@@ -191,6 +255,30 @@ static void mt6323_accdet_wake(struct mt6323_accdet *accdet)
 			      msecs_to_jiffies(ACCDET_SHUTDOWN_MS));
 }
 
+static void mt6323_accdet_key_work(struct work_struct *work)
+{
+	struct mt6323_accdet *accdet =
+		container_of(work, struct mt6323_accdet, key_work.work);
+	enum mt6323_accdet_jack_type jack;
+
+	guard(mutex)(&accdet->lock);
+
+	if (!accdet->btn_type)
+		return;
+
+	if (mt6323_accdet_get_jack_type(accdet, &jack))
+		return;
+
+	if (jack == ACCDET_HEADPHONE) {
+		schedule_delayed_work(&accdet->key_work,
+				      msecs_to_jiffies(ACCDET_KEY_POLL_MS));
+		return;
+	}
+
+	accdet->btn_type = 0;
+	mt6323_accdet_jack_report(accdet);
+}
+
 /* Report jack or key events. Caller holds the lock. */
 static void mt6323_accdet_sync(struct mt6323_accdet *accdet)
 {
@@ -198,6 +286,13 @@ static void mt6323_accdet_sync(struct mt6323_accdet *accdet)
 
 	if (mt6323_accdet_get_jack_type(accdet, &jack))
 		return;
+
+	if (jack == ACCDET_NO_DEVICE && accdet->jack_type) {
+		fsleep(ACCDET_UNPLUG_CONFIRM_US);
+
+		if (mt6323_accdet_get_jack_type(accdet, &jack))
+			return;
+	}
 
 	if (jack == ACCDET_NO_DEVICE) {
 		/*
@@ -214,22 +309,33 @@ static void mt6323_accdet_sync(struct mt6323_accdet *accdet)
 		/* Set long debounce for the next jack insertion event */
 		regmap_write(accdet->regmap, MT6323_ACCDET_CON6,
 			     ACCDET_CON6_DEBOUNCE_DETECT);
-		mt6323_accdet_disable(accdet);
+
+		schedule_delayed_work(&accdet->shutdown_work,
+				      msecs_to_jiffies(ACCDET_SHUTDOWN_MS));
 		return;
 	}
 
-	/* Cancel the work to prevent shutdown */
-	cancel_delayed_work(&accdet->shutdown_work);
-
 	if (accdet->jack_type == SND_JACK_HEADSET) {
-		accdet->btn_type = (jack == ACCDET_HEADPHONE) ? SND_JACK_BTN_0 : 0;
+		if (jack != ACCDET_HEADPHONE) {
+			accdet->btn_type = 0;
+		} else if (!accdet->btn_type) {
+			accdet->btn_type = mt6323_accdet_get_btn_type(accdet);
+
+			if (accdet->btn_type)
+				schedule_delayed_work(&accdet->key_work,
+						      msecs_to_jiffies(ACCDET_KEY_POLL_MS));
+		}
 	} else if (jack == ACCDET_HEADSET) {
+		/* Stay powered to see the buttons */
+		cancel_delayed_work(&accdet->shutdown_work);
 		accdet->jack_type = SND_JACK_HEADSET;
 		/* Set short debounce for key events */
 		regmap_write(accdet->regmap, MT6323_ACCDET_CON6,
 			     ACCDET_CON6_DEBOUNCE_BUTTON);
-	} else {
+	} else if (accdet->jack_type != SND_JACK_HEADPHONE) {
 		accdet->jack_type = SND_JACK_HEADPHONE;
+		mod_delayed_work(system_wq, &accdet->shutdown_work,
+				 msecs_to_jiffies(ACCDET_HEADPHONE_SHUTDOWN_MS));
 	}
 
 	mt6323_accdet_jack_report(accdet);
@@ -242,8 +348,12 @@ static void mt6323_accdet_shutdown_work(struct work_struct *work)
 
 	guard(mutex)(&accdet->lock);
 
-	/* Abort if already powered down */
-	if (accdet->jack_type || !accdet->powered)
+	/* Abort if already powered down, or a headset needs the buttons */
+	if (!accdet->powered || accdet->jack_type == SND_JACK_HEADSET)
+		return;
+
+	mt6323_accdet_sync(accdet);
+	if (accdet->jack_type == SND_JACK_HEADSET)
 		return;
 
 	mt6323_accdet_disable(accdet);
@@ -285,15 +395,10 @@ static int mt6323_accdet_init(struct mt6323_accdet *accdet) {
 		return ret;
 
 	/* setup delay */
-	ret = regmap_set_bits(map, MT6323_ACCDET_CON5,
-	                      FIELD_PREP(ACCDET_CON5_FALL_DELAY,
-	                                 ACCDET_CON5_FALL_DELAY_DEFAULT));
-	if (ret)
-		return ret;
-
-	ret = regmap_set_bits(map, MT6323_ACCDET_CON5,
-	                      FIELD_PREP(ACCDET_CON5_RISE_DELAY,
-	                                 ACCDET_CON5_RISE_DELAY_DEFAULT));
+	ret = regmap_write(map, MT6323_ACCDET_CON5,
+			   ACCDET_CON5_FALL_DELAY |
+			   FIELD_PREP(ACCDET_CON5_RISE_DELAY,
+				      ACCDET_CON5_RISE_DELAY_DEFAULT));
 	if (ret)
 		return ret;
 
@@ -311,11 +416,13 @@ static int mt6323_accdet_init(struct mt6323_accdet *accdet) {
 		return ret;
 
 	/* clear irq if any: w1c */
-	ret = regmap_set_bits(map, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
+	ret = regmap_write(map, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
 	if (ret)
 		return ret;
 
-	ret = regmap_clear_bits(map, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
+	udelay(ACCDET_IRQ_CLR_US);
+
+	ret = regmap_write(map, MT6323_ACCDET_CON11, 0);
 	if (ret)
 		return ret;
 
@@ -331,8 +438,9 @@ static irqreturn_t mt6323_accdet_pmic_irq(int irq, void *data)
 	guard(mutex)(&accdet->lock);
 
 	/* ack the irq (write-1-to-clear pulse), else the PMIC line storms */
-	regmap_set_bits(accdet->regmap, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
-	regmap_clear_bits(accdet->regmap, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
+	regmap_write(accdet->regmap, MT6323_ACCDET_CON11, ACCDET_CON11_IRQ_CLR);
+	udelay(ACCDET_IRQ_CLR_US);
+	regmap_write(accdet->regmap, MT6323_ACCDET_CON11, 0);
 
 	if (!accdet->powered)
 		return IRQ_HANDLED;
@@ -381,6 +489,23 @@ static int mt6323_accdet_probe(struct platform_device *pdev)
 					   mt6323_accdet_shutdown_work);
 	if (ret)
 		return ret;
+
+	ret = devm_delayed_work_autocancel(dev, &accdet->key_work,
+					   mt6323_accdet_key_work);
+	if (ret)
+		return ret;
+
+	accdet->adc = devm_iio_channel_get(dev, "accdet");
+	if (IS_ERR(accdet->adc)) {
+		ret = PTR_ERR(accdet->adc);
+		if (ret == -EPROBE_DEFER)
+			return ret;
+
+		/* only the media button can be reported without it */
+		dev_warn(dev, "no accdet auxadc channel (%d), buttons limited\n",
+			 ret);
+		accdet->adc = NULL;
+	}
 
 	irq = platform_get_irq_byname(pdev, "eint");
 	if (irq < 0)

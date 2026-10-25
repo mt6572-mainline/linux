@@ -78,11 +78,13 @@ struct mtk_wdt_dev {
 	bool disable_wdt_extrst;
 	bool reset_by_toprgu;
 	bool has_swsysrst_en;
+	bool extrst_on_restart;
 };
 
 struct mtk_wdt_data {
 	int toprgu_sw_rst_num;
 	bool has_swsysrst_en;
+	bool extrst_on_restart;
 };
 
 static const struct mtk_wdt_data mt2712_data = {
@@ -91,6 +93,7 @@ static const struct mtk_wdt_data mt2712_data = {
 
 static const struct mtk_wdt_data mt6572_data = {
 	.toprgu_sw_rst_num = MT6572_TOPRGU_SW_RST_NUM,
+	.extrst_on_restart = true,
 };
 
 static const struct mtk_wdt_data mt6735_data = {
@@ -242,6 +245,8 @@ static int mtk_wdt_restart(struct watchdog_device *wdt_dev,
 	/* Enable reset in order to issue a system reset instead of an IRQ */
 	reg = readl(wdt_base + WDT_MODE);
 	reg &= ~WDT_MODE_IRQ_EN;
+	if (mtk_wdt->extrst_on_restart && !mtk_wdt->disable_wdt_extrst)
+		reg |= WDT_MODE_EXRST_EN;
 	writel(reg | WDT_MODE_KEY, wdt_base + WDT_MODE);
 
 	while (1) {
@@ -463,6 +468,7 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 			return err;
 
 		mtk_wdt->has_swsysrst_en = wdt_data->has_swsysrst_en;
+		mtk_wdt->extrst_on_restart = wdt_data->extrst_on_restart;
 	}
 
 	mtk_wdt->disable_wdt_extrst =
